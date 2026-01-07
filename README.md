@@ -5,6 +5,17 @@ Designed for **Vedic / KP astrology**, supporting **Lahiri, KP New, and Raman ay
 
 This project performs **accurate planetary, Rahu–Ketu (mean & true), Lagna, and cuspal calculations** completely offline.
 
+## ⬇️ Download (Windows EXE)
+
+👉 **[Download Tantric Swiss Ephemeris – Windows EXE]
+(https://github.com/DonnieDarsshan/tantric-swiss-ephemeris/releases)**
+
+- No Python required
+- Fully offline
+- Includes Swiss Ephemeris files
+
+
+
 ---
 
 ## ✨ Features
