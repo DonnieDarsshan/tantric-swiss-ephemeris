@@ -23,14 +23,35 @@ EPHE_PATH = get_ephe_path()
 
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 
+
+
+
+
 # -------------------------------------------------
-# AYANAMSHA
+# AYANAMSHA (SAFE – VERSION COMPATIBLE & FUTURE PROOF)
 # -------------------------------------------------
 AYANAMSHA_MAP = {
     "Lahiri": swe.SIDM_LAHIRI,
     "KP New": swe.SIDM_KRISHNAMURTI,
     "Raman": swe.SIDM_RAMAN
 }
+
+# --- Optional / Less common but REAL Swiss Ephemeris ayanamshas ---
+
+if hasattr(swe, "SIDM_YUKTESHWAR"):
+    AYANAMSHA_MAP["Yukteshwar"] = swe.SIDM_YUKTESHWAR
+
+if hasattr(swe, "SIDM_TRUE_REVATI"):
+    AYANAMSHA_MAP["True Revati"] = swe.SIDM_TRUE_REVATI
+
+if hasattr(swe, "SIDM_USHASHASHI"):
+    AYANAMSHA_MAP["Usha–Shashi"] = swe.SIDM_USHASHASHI
+
+
+
+
+
+
 
 # -------------------------------------------------
 # SWISS EPHEMERIS
@@ -48,7 +69,7 @@ PLANETS = {
     "Saturn": swe.SATURN,
     "Rahu": swe.MEAN_NODE,
     "Rahu_true": swe.TRUE_NODE,
-	"Uranus": swe.URANUS,
+    "Uranus": swe.URANUS,
     "Neptune": swe.NEPTUNE,
     "Pluto": swe.PLUTO
 
@@ -82,9 +103,9 @@ def jump_if_complete(var, widget, size, key):
     _last_len[key] = len(cur)
     if cur.isdigit() and len(cur) == size and prev < size:
         widget.focus()
-		
-		
-		
+        
+        
+        
 def smart_day_month_jump(var, next_widget):
     """
     If first digit is 4–9 → jump immediately
@@ -97,8 +118,8 @@ def smart_day_month_jump(var, next_widget):
         next_widget.focus()
     elif len(val) >= 2:
         next_widget.focus()
-		
-		
+        
+        
 def smart_month_jump(var, next_widget):
     """
     Month logic:
@@ -113,7 +134,7 @@ def smart_month_jump(var, next_widget):
         next_widget.focus()
     elif len(val) >= 2:
         next_widget.focus()
-	
+    
 
 
 # -------------------------------------------------
@@ -140,6 +161,56 @@ def open_output_folder():
 
 
 
+def smart_hour_jump(var, next_widget):
+    """
+    HOURS LOGIC (0–23):
+    - If first digit is 3–9 → jump immediately
+    - If first digit is 0–2 → wait for second digit
+    - If two digits entered → jump
+    """
+    val = var.get()
+
+    # Only act if input is numeric
+    if not val.isdigit():
+        return
+
+    # If user typed only ONE digit
+    if len(val) == 1:
+        # 3–9 cannot start a valid 2-digit hour (max 23)
+        if val[0] in "3456789":
+            next_widget.focus()
+
+    # If TWO digits are entered, always jump
+    elif len(val) >= 2:
+        next_widget.focus()
+
+
+def smart_minute_jump(var, next_widget):
+    """
+    MINUTES / SECONDS LOGIC (0–59):
+    - If first digit is 6–9 → jump immediately
+    - If first digit is 0–5 → wait for second digit
+    - If two digits entered → jump
+    """
+    val = var.get()
+
+    # Only act if input is numeric
+    if not val.isdigit():
+        return
+
+    # If user typed only ONE digit
+    if len(val) == 1:
+        # 6–9 cannot start a valid 2-digit minute/second
+        if val[0] in "6789":
+            next_widget.focus()
+
+    # If TWO digits are entered, always jump
+    elif len(val) >= 2:
+        next_widget.focus()
+
+
+
+
 # -------------------------------------------------
 # AYANAMSHA CHECKBOX CONTROL
 # -------------------------------------------------
@@ -158,6 +229,64 @@ def get_ayanamsha():
 # -------------------------------------------------
 
 
+def calculate_all_ayanamshas(jd, lat, lon):
+    results = {}
+
+    for name, sid_mode in AYANAMSHA_MAP.items():
+        swe.set_sid_mode(sid_mode)
+        ayan = swe.get_ayanamsa(jd)
+
+        planets = {}
+
+        rahu_mean = swe.calc_ut(jd, swe.MEAN_NODE, FLAGS)[0][0] % 360
+        rahu_true = swe.calc_ut(jd, swe.TRUE_NODE, FLAGS)[0][0] % 360
+
+        planets["Rahu"] = rahu_mean
+        planets["Rahu_true"] = rahu_true
+        planets["Ketu"] = (rahu_mean + 180) % 360
+        planets["Ketu_true"] = (rahu_true + 180) % 360
+
+        for p, code in PLANETS.items():
+            planets[p] = swe.calc_ut(jd, code, FLAGS)[0][0] % 360
+
+        houses, _ = swe.houses(jd, lat, lon, b'P')
+
+        cusps = {}
+        for i in range(12):
+            cusps[str(i + 1)] = (houses[i] - ayan) % 360
+
+        results[name] = {
+            "ayanamsha_value": ayan,
+            "lagna": cusps["1"],
+            "planets": planets,
+            "cusps": cusps
+        }
+
+    return results
+
+
+
+
+def calculate_sayana(jd, lat, lon):
+    planets = {}
+
+    for p, code in PLANETS.items():
+        planets[p] = swe.calc_ut(jd, code, swe.FLG_SWIEPH)[0][0] % 360
+
+    houses, _ = swe.houses(jd, lat, lon, b'P')
+    cusps = {str(i + 1): houses[i] % 360 for i in range(12)}
+
+    return {
+        "ayanamsha_value": 0.0,
+        "lagna": cusps["1"],
+        "planets": planets,
+        "cusps": cusps
+    }
+
+
+
+
+
 
 
 def calculate_and_save():
@@ -165,7 +294,6 @@ def calculate_and_save():
         if not name_var.get().strip():
             raise ValueError("Enter person name")
 
-        # Ask output folder only once
         if not settings.get("output_dir"):
             folder = filedialog.askdirectory()
             if not folder:
@@ -187,49 +315,39 @@ def calculate_and_save():
         offset += int(dst_var.get()) * 60
         utc = dt - timedelta(minutes=offset)
 
-        swe.set_sid_mode(AYANAMSHA_MAP[get_ayanamsha()])
-
         jd = swe.julday(
             utc.year, utc.month, utc.day,
             utc.hour + utc.minute / 60 + utc.second / 3600
         )
 
         lat = int(lat_d.get()) + int(lat_m.get()) / 60
+        if lat_dir.get().strip().upper() == "S":
+            lat = -lat
+
         lon = int(lon_d.get()) + int(lon_m.get()) / 60
+        if lon_dir.get().strip().upper() == "W":
+            lon = -lon
 
-        planets = {}
 
-        # --- Mean & True Nodes (Swiss Correct) ---
-        rahu_mean = swe.calc_ut(jd, swe.MEAN_NODE, FLAGS)[0][0] % 360
-        rahu_true = swe.calc_ut(jd, swe.TRUE_NODE, FLAGS)[0][0] % 360
 
-        planets["Rahu"] = rahu_mean
-        planets["Rahu_true"] = rahu_true
-        planets["Ketu"] = (rahu_mean + 180) % 360
-        planets["Ketu_true"] = (rahu_true + 180) % 360
 
-        # --- Remaining Planets ---
-        for p, code in PLANETS.items():
-            planets[p] = swe.calc_ut(jd, code, FLAGS)[0][0] % 360
-
-        houses, _ = swe.houses(jd, lat, lon, b'P')
-        ayan = swe.get_ayanamsa(jd)
-
-        cusps = {}
-        for i in range(12):
-            cusps[str(i + 1)] = (houses[i] - ayan) % 360
+        ayanamsha_results = calculate_all_ayanamshas(jd, lat, lon)
+        ayanamsha_results["Sayana"] = calculate_sayana(jd, lat, lon)
 
         data = {
             "meta": {
                 "name": name_var.get().strip(),
-                "ayanamsha": get_ayanamsha(),
                 "latitude": lat,
                 "longitude": lon,
                 "datetime_utc": utc.strftime("%Y-%m-%dT%H:%M:%SZ")
             },
-            "lagna": cusps["1"],
-            "planets": planets,
-            "cusps": cusps
+
+            "ayanamsha": "Lahiri",
+            "lagna": ayanamsha_results["Lahiri"]["lagna"],
+            "planets": ayanamsha_results["Lahiri"]["planets"],
+            "cusps": ayanamsha_results["Lahiri"]["cusps"],
+
+            "ayanamshas": ayanamsha_results
         }
 
         with open(save_path, "w", encoding="utf-8") as f:
@@ -238,10 +356,8 @@ def calculate_and_save():
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
-		
-		
-		
-		
+        
+        
 
 
 
@@ -336,6 +452,12 @@ ttk.Label(left_frame, text="OFFLINE SWISS EPHEMERIS", font=TITLE_FONT).pack(pady
 # NAME
 ttk.Label(left_frame, text="NAME").pack(anchor="w")
 e_name = ttk.Entry(left_frame, textvariable=name_var)
+
+def force_uppercase_name(*args):
+    name_var.set(name_var.get().upper())
+
+name_var.trace_add("write", force_uppercase_name)
+
 e_name.pack(fill="x", pady=4)
 
 # AUTO FOCUS ON APP START
@@ -375,8 +497,12 @@ e_sc = ttk.Entry(tf, width=6, textvariable=sec_var)
 e_hh.pack(side="left", padx=4)
 e_mn.pack(side="left", padx=4)
 e_sc.pack(side="left", padx=4)
-e_hh.bind("<KeyRelease>", lambda e: jump_if_complete(hh_var, e_mn, 2, "hh"))
-e_mn.bind("<KeyRelease>", lambda e: jump_if_complete(min_var, e_lat_d, 2, "mn"))
+# Smart jump for HOURS (0–23)
+# HOURS → MINUTES (0–23 smart jump)
+e_hh.bind("<KeyRelease>", lambda e: smart_hour_jump(hh_var, e_mn))
+
+# MINUTES → LATITUDE DEGREE (0–59 smart jump)
+e_mn.bind("<KeyRelease>", lambda e: smart_minute_jump(min_var, e_lat_d))
 
 
 
@@ -389,39 +515,59 @@ ttk.Entry(uf, width=6, textvariable=tz_m).pack(side="left", padx=4)
 ttk.Label(uf, text="DST").pack(side="left", padx=6)
 ttk.Entry(uf, width=6, textvariable=dst_var).pack(side="left")
 
-# LAT / LON
-ttk.Label(frame, text="Latitude (Deg  Min)").pack(anchor="w", pady=(10,4))
+
+
+
+
+
+
+
+
+# LAT / LON WITH MANUAL N / S / E / W ENTRY
+
+ttk.Label(frame, text="Latitude (Deg  Min  N/S)").pack(anchor="w", pady=(10,4))
 lf = ttk.Frame(frame); lf.pack(anchor="w")
+
+lat_dir = tk.StringVar(value="N")
+
 e_lat_d = ttk.Entry(lf, width=8, textvariable=lat_d)
 e_lat_m = ttk.Entry(lf, width=8, textvariable=lat_m)
+e_lat_dir = ttk.Entry(lf, width=4, textvariable=lat_dir)
+
 e_lat_d.pack(side="left", padx=4)
 e_lat_m.pack(side="left", padx=4)
+e_lat_dir.pack(side="left", padx=6)
 
-e_lat_d.bind("<KeyRelease>", lambda e: jump_if_complete(lat_d, e_lat_m, 2, "lat_d"))
 
-ttk.Label(frame, text="Longitude (Deg  Min)").pack(anchor="w", pady=(10,4))
+
+
+ttk.Label(frame, text="Longitude (Deg  Min  E/W)").pack(anchor="w", pady=(10,4))
 lof = ttk.Frame(frame); lof.pack(anchor="w")
+
+lon_dir = tk.StringVar(value="E")
+
 e_lon_d = ttk.Entry(lof, width=8, textvariable=lon_d)
 e_lon_m = ttk.Entry(lof, width=8, textvariable=lon_m)
+e_lon_dir = ttk.Entry(lof, width=4, textvariable=lon_dir)
+
 e_lon_d.pack(side="left", padx=4)
 e_lon_m.pack(side="left", padx=4)
-
-e_lat_m.bind("<KeyRelease>", lambda e: jump_if_complete(lat_m, e_lon_d, 2, "lat_m"))
-e_lon_d.bind("<KeyRelease>", lambda e: jump_if_complete(lon_d, e_lon_m, 2, "lon_d"))
+e_lon_dir.pack(side="left", padx=6)
 
 
 
-# AYANAMSHA (BELOW LONGITUDE)
-ttk.Label(frame, text="Ayanamsha").pack(anchor="w", pady=(14,4))
-af = ttk.Frame(frame)
-af.pack(anchor="w")
-for k in ayan_vars:
-    ttk.Checkbutton(
-        af,
-        text=k,
-        variable=ayan_vars[k],
-        command=lambda x=k: select_ayanamsha(x)
-    ).pack(side="left", padx=12)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
